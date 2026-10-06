@@ -1,0 +1,73 @@
+name: AWS CD
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+jobs:
+  DeployToAWS:
+    if: github.ref_name == 'dev'
+    environment:
+      name: dev
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: sa-east-1
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: github-action
+
+      - name: Setting stage and stack name
+        run: |
+          echo "STAGE=dev"
+          REPO=${{ github.event.repository.name }}
+          REPO_SLUG=${REPO//_/-}
+          echo "REPO_NAME=${REPO}" >> $GITHUB_ENV
+          echo "REPO_SLUG=${REPO_SLUG}" >> $GITHUB_ENV
+          echo "STACK_NAME=battlesnake-${REPO_SLUG}-dev" >> $GITHUB_ENV
+          echo "PROJECT_NAME=battlesnake-${REPO_SLUG}" >> $GITHUB_ENV
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Run Tests
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pytest
+
+      - name: Installing Dependencies to Deploy
+        run: |
+          npm install -g aws-cdk@2.1140.0
+          cd iac
+          pip install -r requirements.txt
+
+      - name: Installing Dependencies to BattleSnake
+        run: |
+          pip install -t src -r requirements.txt
+
+      - name: Setup envs
+        run: |
+          echo AWS_REGION=sa-east-1 >> $GITHUB_ENV
+          echo AWS_ACCOUNT_ID_DEV=${{ secrets.AWS_ACCOUNT_ID_DEV }} >> $GITHUB_ENV
+          echo GITHUB_REF_NAME=dev >> $GITHUB_ENV
+
+          echo ${{ env.AWS_REGION }}
+          echo ${{ env.AWS_ACCOUNT_ID_DEV }}
+          echo ${{ env.STACK_NAME }}
+          echo ${{ env.REPO_NAME }}
+          echo ${{ env.GITHUB_REF_NAME }}
+
+      - name: Deploy with CDK
+        run: |
+          cd iac
+          cdk synth
+          cdk deploy --require-approval never

@@ -1,0 +1,52 @@
+name: AWS DESTROY
+on:
+  workflow_dispatch:
+jobs:
+  DestroyAWS:
+    if: github.ref_name == 'dev'
+    environment:
+      name: dev
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: sa-east-1
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: github-action
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Setting stage and stack name
+        run: |
+          echo "STAGE=dev"
+          REPO=${{ github.event.repository.name }}
+          REPO_SLUG=${REPO//_/-}
+          echo "REPO_NAME=${REPO}" >> $GITHUB_ENV
+          echo "REPO_SLUG=${REPO_SLUG}" >> $GITHUB_ENV
+          echo "STACK_NAME=battlesnake-${REPO_SLUG}-dev" >> $GITHUB_ENV
+          echo "PROJECT_NAME=battlesnake-${REPO_SLUG}" >> $GITHUB_ENV
+
+      - name: Setup envs
+        run: |
+          echo AWS_REGION=sa-east-1 >> $GITHUB_ENV
+          echo AWS_ACCOUNT_ID_DEV=${{ secrets.AWS_ACCOUNT_ID_DEV }} >> $GITHUB_ENV
+          echo GITHUB_REF_NAME=dev >> $GITHUB_ENV
+
+      - name: Installing Dependencies to Destroy
+        run: |
+          npm install -g aws-cdk@2.1140.0
+          cd iac
+          pip install -r requirements.txt
+
+      - name: Destroying AWS
+        run: |
+          cd iac
+          cdk destroy --force
